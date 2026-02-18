@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shooter</title>
+  <style>
+    :root {
+      --bg0: #17222d;
+      --bg1: #243444;
+      --hud: #d9e7f2;
+      --accent: #ff6f59;
+      --ok: #41d39a;
+      --danger: #ff4a5f;
+      --wall: #4b5d73;
+      --wall2: #61748d;
+      --crate: #8d6a43;
+      --crate2: #6d502f;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 20% 20%, #2d4256, #17222d 70%);
+      color: var(--hud);
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      image-rendering: crisp-edges;
+      cursor: crosshair;
+    }
+
+    .overlay {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      padding: 10px 12px;
+      background: rgba(10, 18, 25, 0.55);
+      border: 1px solid rgba(220, 235, 255, 0.2);
+      border-radius: 10px;
+      backdrop-filter: blur(3px);
+      user-select: none;
+      line-height: 1.4;
+      font-size: 14px;
+      letter-spacing: 0.25px;
+      max-width: min(520px, 92vw);
+    }
+
+    .overlay strong { color: #fff; }
+    .dead {
+      color: #fff;
+      background: rgba(180, 20, 45, 0.35);
+      border-color: rgba(255, 120, 140, 0.55);
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 7px;
+    }
+
+    /* Add styles for on-screen controls */
+    .controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+    }
+
+    .control-button {
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: white;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .control-button:active {
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Styles for joystick and shooting button */
+    .joystick-container {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      width: 120px;
+      height: 120px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      touch-action: none;
+      z-index: 10;
+    }
+
+    .joystick-handle {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.5);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      touch-action: none;
+    }
+
+    .shoot-button {
+      position: fixed;
+      bottom: 40px;
+      right: 20px;
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #ff4500, #ff6347);
+      border: none;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      font-size: 28px;
+      font-weight: bold;
+      color: white;
+    }
+
+    .shoot-button:active {
+      background: linear-gradient(135deg, #ff6347, #ff4500);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Perk styles */
+    .perk {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+      color: white;
+      text-align: center;
+    }
+
+    .perk.slow-time {
+      background: rgba(0, 191, 255, 0.8);
+    }
+
+    .perk.speed-boost {
+      background: rgba(50, 205, 50, 0.8);
+    }
+
+    .perk.regenerate-hp {
+      background: rgba(255, 69, 0, 0.8);
+    }
+
+    .perk.shield {
+      background: rgba(138, 43, 226, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div class="overlay" id="hud"></div>
+
+  <!-- Joystick and shooting button for mobile -->
+  <div class="joystick-container" id="joystick-container">
+    <div class="joystick-handle" id="joystick-handle"></div>
+  </div>
+  <div class="shoot-button" id="shoot-button">FIRE</div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const hud = document.getElementById("hud");
+
+    const joystickContainer = document.getElementById("joystick-container");
+    const joystickHandle = document.getElementById("joystick-handle");
+    const shootButton = document.getElementById("shoot-button");
+
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+
+    if (!isMobile) {
+      joystickContainer.style.display = "none";
+      shootButton.style.display = "none";
+    }
+
+    let joystick = { x: 0, y: 0, active: false };
+
+    if (isMobile) {
+      joystickContainer.addEventListener("touchstart", (e) => {
+        joystick.active = true;
+        const touch = e.touches[0];
+        const rect = joystickContainer.getBoundingClientRect();
+        joystick.x = touch.clientX - rect.left - rect.width / 2;
+        joystick.y = touch.clientY - rect.top - rect.height / 2;
+        updateJoystick();
+      });
+
+      joystickContainer.addEventListener("touchmove", (e) => {
+        if (!joystick.active) return;
+        const touch = e.touches[0];
+        const rect = joystickContainer.getBoundingClientRect();
+        joystick.x = touch.clientX - rect.left - rect.width / 2;
+        joystick.y = touch.clientY - rect.top - rect.height / 2;
+        const dist = Math.hypot(joystick.x, joystick.y);
+        const maxDist = rect.width / 2;
+        if (dist > maxDist) {
+          joystick.x *= maxDist / dist;
+          joystick.y *= maxDist / dist;
+        }
+        updateJoystick();
+      });
+
+      joystickContainer.addEventListener("touchend", () => {
+        joystick.active = false;
+        joystick.x = 0;
+        joystick.y = 0;
+        updateJoystick();
+      });
+
+      shootButton.addEventListener("touchstart", () => state.mouse.down = true);
+      shootButton.addEventListener("touchend", () => state.mouse.down = false);
+    }
+
+    function updateJoystick() {
+      joystickHandle.style.transform = `translate(${joystick.x + 60}px, ${joystick.y + 60}px)`;
+    }
+
+    const TAU = Math.PI * 2;
+
+    const state = {
+      keys: new Set(),
+      mouse: { x: 0, y: 0, down: false },
+      time: 0,
+      dt: 0,
+      score: 0,
+      wave: 1,
+      gameOver: false,
+    };
+
+    function resize() {
+      canvas.width = innerWidth;
+      canvas.height = innerHeight;
+    }
+    addEventListener("resize", resize);
+    resize();
+
+    addEventListener("keydown", (e) => {
+      const k = e.key.toLowerCase();
+      state.keys.add(k);
+      if (["w", "a", "s", "d", "r", " "].includes(k)) e.preventDefault();
+      if (k === "r" && state.gameOver) resetGame();
+    });
+
+    addEventListener("keyup", (e) => state.keys.delete(e.key.toLowerCase()));
+
+    canvas.addEventListener("mousemove", (e) => {
+      state.mouse.x = e.clientX;
+      state.mouse.y = e.clientY;
+    });
+    canvas.addEventListener("mousedown", () => state.mouse.down = true);
+    addEventListener("mouseup", () => state.mouse.down = false);
+
+    const world = {
+      w: 2400,
+      h: 1600,
+      walls: [],
+      objects: [],
+      perks: [],
+      bullets: [],
+      enemyBullets: [],
+      bots: [],
+      particles: [],
+    };
+
+    function rect(x, y, w, h, type = "wall") {
+      return { x, y, w, h, type };
+    }
+
+    function buildMap() {
+      world.walls = [];
+      world.objects = [];
+
+      world.walls.push(rect(0, 0, world.w, 42));
+      world.walls.push(rect(0, world.h - 42, world.w, 42));
+      world.walls.push(rect(0, 0, 42, world.h));
+      world.walls.push(rect(world.w - 42, 0, 42, world.h));
+
+      world.walls.push(rect(250, 210, 760, 42));
+      world.walls.push(rect(250, 210, 42, 360));
+      world.walls.push(rect(920, 210, 42, 300));
+
+      world.walls.push(rect(1240, 140, 850, 42));
+      world.walls.push(rect(1240, 140, 42, 430));
+
+      world.walls.push(rect(420, 880, 42, 490));
+      world.walls.push(rect(420, 1330, 780, 42));
+      world.walls.push(rect(1080, 760, 42, 612));
+
+      world.walls.push(rect(1450, 700, 780, 42));
+      world.walls.push(rect(1450, 700, 42, 510));
+      world.walls.push(rect(1840, 980, 390, 42));
+
+      const crates = [
+        [570, 640], [650, 640], [730, 640],
+        [1460, 260], [1542, 260], [1624, 260], [1706, 260],
+        [980, 980], [1065, 980],
+        [1920, 1250], [2005, 1250], [2090, 1250],
+      ];
+      crates.forEach(([x, y], i) => {
+        world.objects.push(rect(x, y, 64, 64, i % 3 === 0 ? "barrel" : "crate"));
+      });
+    }
+
+    function intersects(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function circleRect(cx, cy, r, rec) {
+      const nx = Math.max(rec.x, Math.min(cx, rec.x + rec.w));
+      const ny = Math.max(rec.y, Math.min(cy, rec.y + rec.h));
+      const dx = cx - nx;
+      const dy = cy - ny;
+      return dx * dx + dy * dy < r * r;
+    }
+
+    function solidRects() {
+      return world.walls.concat(world.objects);
+    }
+
+    const player = {
+      x: 180,
+      y: 180,
+      r: 18,
+      hp: 100,
+      maxHp: 100,
+      speed: 280,
+      shootDelay: 0.12,
+      shootCd: 0,
+      ang: 0,
+      hitFlash: 0,
+    };
+
+    const activePerks = {
+      slowUntil: 0,
+      speedUntil: 0,
+      regenUntil: 0,
+      shieldUntil: 0,
+    };
+
+    function hasPerk(name) {
+      if (name === "slow-time") return state.time < activePerks.slowUntil;
+      if (name === "speed-boost") return state.time < activePerks.speedUntil;
+      if (name === "regenerate-hp") return state.time < activePerks.regenUntil;
+      if (name === "shield") return state.time < activePerks.shieldUntil;
+      return false;
+    }
+
+    function activatePerk(type, duration = 8) {
+      const until = state.time + duration;
+      if (type === "slow-time") activePerks.slowUntil = Math.max(activePerks.slowUntil, until);
+      if (type === "speed-boost") activePerks.speedUntil = Math.max(activePerks.speedUntil, until);
+      if (type === "regenerate-hp") activePerks.regenUntil = Math.max(activePerks.regenUntil, until);
+      if (type === "shield") activePerks.shieldUntil = Math.max(activePerks.shieldUntil, until);
+    }
+
+    function enemyTimeScale() {
+      return hasPerk("slow-time") ? 0.42 : 1;
+    }
+
+    function damageScale() {
+      return hasPerk("shield") ? 0.5 : 1;
+    }
+
+    function updatePerkEffects(dt) {
+      player.speed = hasPerk("speed-boost") ? 360 : 280;
+      if (hasPerk("regenerate-hp") && player.hp > 0) {
+        player.hp = Math.min(player.maxHp, player.hp + 16 * dt);
+      }
+
+      for (let i = world.perks.length - 1; i >= 0; i--) {
+        const perk = world.perks[i];
+        perk.ttl -= dt;
+        if (perk.ttl <= 0) {
+          world.perks.splice(i, 1);
+          continue;
+        }
+        if (Math.hypot(player.x - perk.x, player.y - perk.y) <= player.r + perk.r) {
+          activatePerk(perk.type);
+          spawnImpact(perk.x, perk.y, "#d8f7ff", "#89f0c7", 16);
+          world.perks.splice(i, 1);
+        }
+      }
+    }
+
+    function spawnBot() {
+      const spawns = [
+        [2200, 1450], [2150, 220], [1580, 1450], [350, 1470], [2270, 860], [1180, 70]
+      ];
+      const s = spawns[Math.floor(Math.random() * spawns.length)];
+      world.bots.push({
+        x: s[0], y: s[1], r: 16,
+        hp: 55 + state.wave * 7,
+        speed: 130 + state.wave * 7,
+        shootCd: Math.random() * 0.6,
+        shootDelay: Math.max(0.42, 1.05 - state.wave * 0.06),
+        ang: 0,
+        hitFlash: 0,
+      });
+    }
+
+    function spawnWave() {
+      const n = 4 + state.wave * 2;
+      for (let i = 0; i < n; i++) spawnBot();
+    }
+
+    function resetGame() {
+      state.score = 0;
+      state.wave = 1;
+      state.gameOver = false;
+      state.time = 0;
+
+      player.x = 180;
+      player.y = 180;
+      player.hp = player.maxHp;
+      player.shootCd = 0;
+
+      world.bullets = [];
+      world.enemyBullets = [];
+      world.perks = [];
+      world.bots = [];
+      world.particles = [];
+      activePerks.slowUntil = 0;
+      activePerks.speedUntil = 0;
+      activePerks.regenUntil = 0;
+      activePerks.shieldUntil = 0;
+      player.speed = 280;
+      buildMap();
+      spawnWave();
+    }
+
+    function spawnPerk(type, x, y) {
+      world.perks.push({ type, x, y, r: 18, ttl: 20 });
+    }
+
+    function moveEntity(ent, vx, vy, dt) {
+      const solids = solidRects();
+      ent.x += vx * dt;
+      for (const s of solids) {
+        if (circleRect(ent.x, ent.y, ent.r, s)) {
+          if (vx > 0) ent.x = s.x - ent.r;
+          if (vx < 0) ent.x = s.x + s.w + ent.r;
+        }
+      }
+      ent.y += vy * dt;
+      for (const s of solids) {
+        if (circleRect(ent.x, ent.y, ent.r, s)) {
+          if (vy > 0) ent.y = s.y - ent.r;
+          if (vy < 0) ent.y = s.y + s.h + ent.r;
+        }
+      }
+      ent.x = Math.max(ent.r, Math.min(world.w - ent.r, ent.x));
+      ent.y = Math.max(ent.r, Math.min(world.h - ent.r, ent.y));
+    }
+
+    function shootBullet(arr, x, y, ang, speed, ttl, damage, color, owner) {
+      arr.push({
+        x, y,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        r: 4,
+        ttl,
+        damage,
+        color,
+        owner,
+      });
+    }
+
+    function spawnImpact(x, y, c1 = "#ffd68a", c2 = "#ff6f59", count = 10) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * TAU;
+        const s = 50 + Math.random() * 180;
+        world.particles.push({
+          x, y,
+          vx: Math.cos(a) * s,
+          vy: Math.sin(a) * s,
+          ttl: 0.25 + Math.random() * 0.35,
+          size: 2 + Math.random() * 2.8,
+          c: Math.random() < 0.45 ? c1 : c2,
+        });
+      }
+    }
+
+    function lineBlocked(x1, y1, x2, y2) {
+      const steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 18);
+      const solids = solidRects();
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const x = x1 + (x2 - x1) * t;
+        const y = y1 + (y2 - y1) * t;
+        for (const s of solids) {
+          if (x > s.x && x < s.x + s.w && y > s.y && y < s.y + s.h) return true;
+        }
+      }
+      return false;
+    }
+
+    function update(dt) {
+      if (state.gameOver) return;
+
+      state.time += dt;
+      updatePerkEffects(dt);
+      const enemyDt = dt * enemyTimeScale();
+
+      let mx = 0, my = 0;
+      if (isMobile && joystick.active) {
+        mx = joystick.x / 60;
+        my = joystick.y / 60;
+      } else {
+        if (state.keys.has("w")) my -= 1;
+        if (state.keys.has("s")) my += 1;
+        if (state.keys.has("a")) mx -= 1;
+        if (state.keys.has("d")) mx += 1;
+      }
+
+      const mag = Math.hypot(mx, my) || 1;
+      mx /= mag;
+      my /= mag;
+
+      const cam = camera();
+      let worldMouseX = state.mouse.x + cam.x;
+      let worldMouseY = state.mouse.y + cam.y;
+
+      // Enhanced aim assist for mobile
+      if (isMobile) {
+        let closestBot = null;
+        let closestDist = 300; // Aim assist range
+        let targetX = worldMouseX;
+        let targetY = worldMouseY;
+
+        for (const bot of world.bots) {
+          const dist = Math.hypot(bot.x - player.x, bot.y - player.y);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestBot = bot;
+          }
+        }
+
+        if (closestBot) {
+          // Directly aim at the closest bot
+          targetX = closestBot.x;
+          targetY = closestBot.y;
+        }
+
+        // Smoothly adjust the aim towards the target
+        const aimFactor = 0.9; // Higher value for stronger aim assist
+        worldMouseX = targetX * aimFactor + worldMouseX * (1 - aimFactor);
+        worldMouseY = targetY * aimFactor + worldMouseY * (1 - aimFactor);
+      }
+
+      player.ang = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+      player.hitFlash = Math.max(0, player.hitFlash - dt * 3.2);
+
+      moveEntity(player, mx * player.speed, my * player.speed, dt);
+
+      player.shootCd -= dt;
+      if (state.mouse.down && player.shootCd <= 0) {
+        player.shootCd = player.shootDelay;
+        shootBullet(world.bullets,
+          player.x + Math.cos(player.ang) * 22,
+          player.y + Math.sin(player.ang) * 22,
+          player.ang + (Math.random() - 0.5) * 0.045,
+          760, 1.2, 26, "#f8f2de", "player");
+      }
+
+      for (let i = world.bullets.length - 1; i >= 0; i--) {
+        const b = world.bullets[i];
+        b.ttl -= dt;
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        if (b.ttl <= 0 || b.x < 0 || b.y < 0 || b.x > world.w || b.y > world.h) {
+          world.bullets.splice(i, 1);
+          continue;
+        }
+
+        let hitSolid = false;
+        for (const s of solidRects()) {
+          if (b.x > s.x && b.x < s.x + s.w && b.y > s.y && b.y < s.y + s.h) {
+            hitSolid = true;
+            break;
+          }
+        }
+        if (hitSolid) {
+          spawnImpact(b.x, b.y, "#d2e6ff", "#87a7d2", 6);
+          world.bullets.splice(i, 1);
+          continue;
+        }
+
+        for (let j = world.bots.length - 1; j >= 0; j--) {
+          const bot = world.bots[j];
+          const d = Math.hypot(b.x - bot.x, b.y - bot.y);
+          if (d < b.r + bot.r) {
+            bot.hp -= b.damage;
+            bot.hitFlash = 1;
+            spawnImpact(b.x, b.y, "#ffd1c7", "#ff6f59", 8);
+            world.bullets.splice(i, 1);
+            if (bot.hp <= 0) {
+              state.score += 10;
+              spawnImpact(bot.x, bot.y, "#ffe6a8", "#ff7d5f", 22);
+              world.bots.splice(j, 1);
+            }
+            break;
+          }
+        }
+      }
+
+      for (let i = world.enemyBullets.length - 1; i >= 0; i--) {
+        const b = world.enemyBullets[i];
+        b.ttl -= enemyDt;
+        b.x += b.vx * enemyDt;
+        b.y += b.vy * enemyDt;
+        if (b.ttl <= 0 || b.x < 0 || b.y < 0 || b.x > world.w || b.y > world.h) {
+          world.enemyBullets.splice(i, 1);
+          continue;
+        }
+
+        let hitSolid = false;
+        for (const s of solidRects()) {
+          if (b.x > s.x && b.x < s.x + s.w && b.y > s.y && b.y < s.y + s.h) {
+            hitSolid = true;
+            break;
+          }
+        }
+        if (hitSolid) {
+          spawnImpact(b.x, b.y, "#ffe8b6", "#ffc35f", 4);
+          world.enemyBullets.splice(i, 1);
+          continue;
+        }
+
+        const d = Math.hypot(b.x - player.x, b.y - player.y);
+        if (d < b.r + player.r) {
+          player.hp -= b.damage * damageScale();
+          player.hitFlash = 1;
+          spawnImpact(b.x, b.y, "#ffd5cc", "#ff7c65", 10);
+          world.enemyBullets.splice(i, 1);
+          if (player.hp <= 0) {
+            player.hp = 0;
+            state.gameOver = true;
+          }
+        }
+      }
+
+      for (const bot of world.bots) {
+        bot.hitFlash = Math.max(0, bot.hitFlash - enemyDt * 3.2);
+        const dx = player.x - bot.x;
+        const dy = player.y - bot.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        bot.ang = Math.atan2(dy, dx);
+
+        let vx = (dx / dist) * bot.speed;
+        let vy = (dy / dist) * bot.speed;
+
+        for (const other of world.bots) {
+          if (other === bot) continue;
+          const sx = bot.x - other.x;
+          const sy = bot.y - other.y;
+          const sd = Math.hypot(sx, sy);
+          if (sd > 0 && sd < 42) {
+            vx += (sx / sd) * 90;
+            vy += (sy / sd) * 90;
+          }
+        }
+
+        moveEntity(bot, vx, vy, enemyDt);
+
+        if (dist < bot.r + player.r + 6) {
+          player.hp -= 24 * enemyDt * damageScale();
+          player.hitFlash = 0.75;
+          if (player.hp <= 0) {
+            player.hp = 0;
+            state.gameOver = true;
+          }
+        }
+
+        bot.shootCd -= enemyDt;
+        if (bot.shootCd <= 0 && dist < 540 && !lineBlocked(bot.x, bot.y, player.x, player.y)) {
+          bot.shootCd = bot.shootDelay + Math.random() * 0.35;
+          shootBullet(world.enemyBullets,
+            bot.x + Math.cos(bot.ang) * 18,
+            bot.y + Math.sin(bot.ang) * 18,
+            bot.ang + (Math.random() - 0.5) * 0.15,
+            460, 2, 11 + state.wave, "#ffc766", "bot");
+        }
+      }
+
+      for (let i = world.particles.length - 1; i >= 0; i--) {
+        const p = world.particles[i];
+        p.ttl -= dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.92;
+        p.vy *= 0.92;
+        if (p.ttl <= 0) world.particles.splice(i, 1);
+      }
+
+      if (world.bots.length === 0 && !state.gameOver) {
+        state.wave++;
+        spawnWave();
+      }
+    }
+
+    function camera() {
+      return {
+        x: Math.max(0, Math.min(world.w - canvas.width, player.x - canvas.width / 2)),
+        y: Math.max(0, Math.min(world.h - canvas.height, player.y - canvas.height / 2)),
+      };
+    }
+
+    function drawFloor(cam) {
+      const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      g.addColorStop(0, "#253748");
+      g.addColorStop(1, "#1a2734");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(-cam.x, -cam.y);
+      ctx.strokeStyle = "rgba(180, 205, 235, 0.06)";
+      ctx.lineWidth = 1;
+      const grid = 64;
+      const sx = Math.floor(cam.x / grid) * grid;
+      const sy = Math.floor(cam.y / grid) * grid;
+      for (let x = sx; x < cam.x + canvas.width + grid; x += grid) {
+        ctx.beginPath();
+        ctx.moveTo(x, cam.y);
+        ctx.lineTo(x, cam.y + canvas.height);
+        ctx.stroke();
+      }
+      for (let y = sy; y < cam.y + canvas.height + grid; y += grid) {
+        ctx.beginPath();
+        ctx.moveTo(cam.x, y);
+        ctx.lineTo(cam.x + canvas.width, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawWalls(cam) {
+      ctx.save();
+      ctx.translate(-cam.x, -cam.y);
+
+      for (const w of world.walls) {
+        const g = ctx.createLinearGradient(w.x, w.y, w.x + w.w, w.y + w.h);
+        g.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue("--wall"));
+        g.addColorStop(1, getComputedStyle(document.documentElement).getPropertyValue("--wall2"));
+        ctx.fillStyle = g;
+        roundRect(ctx, w.x, w.y, w.w, w.h, 6, true, false);
+
+        ctx.strokeStyle = "rgba(20, 32, 43, 0.8)";
+        ctx.lineWidth = 2;
+        roundRect(ctx, w.x + 1, w.y + 1, w.w - 2, w.h - 2, 5, false, true);
+      }
+
+      for (const o of world.objects) {
+        if (o.type === "crate") drawCrate(o.x, o.y, o.w, o.h);
+        else drawBarrel(o.x, o.y, o.w, o.h);
+      }
+
+      ctx.restore();
+    }
+
+    function drawCrate(x, y, w, h) {
+      const g = ctx.createLinearGradient(x, y, x + w, y + h);
+      g.addColorStop(0, "#9c7a4f");
+      g.addColorStop(1, "#6f522f");
+      ctx.fillStyle = g;
+      roundRect(ctx, x, y, w, h, 6, true, false);
+      ctx.strokeStyle = "rgba(47, 31, 16, 0.85)";
+      ctx.lineWidth = 2;
+      roundRect(ctx, x + 1, y + 1, w - 2, h - 2, 5, false, true);
+      ctx.strokeRect(x + 10, y + 10, w - 20, h - 20);
+      ctx.beginPath();
+      ctx.moveTo(x + 10, y + 10);
+      ctx.lineTo(x + w - 10, y + h - 10);
+      ctx.moveTo(x + w - 10, y + 10);
+      ctx.lineTo(x + 10, y + h - 10);
+      ctx.stroke();
+    }
+
+    function drawBarrel(x, y, w, h) {
+      const g = ctx.createLinearGradient(x, y, x + w, y + h);
+      g.addColorStop(0, "#c44b4b");
+      g.addColorStop(1, "#882f2f");
+      ctx.fillStyle = g;
+      roundRect(ctx, x, y, w, h, 10, true, false);
+      ctx.fillStyle = "rgba(240, 180, 180, 0.35)";
+      ctx.fillRect(x + 8, y + 8, 8, h - 16);
+      ctx.fillStyle = "#2a1d1d";
+      ctx.fillRect(x + 6, y + h * 0.32, w - 12, 5);
+      ctx.fillRect(x + 6, y + h * 0.68, w - 12, 5);
+      ctx.strokeStyle = "rgba(60, 22, 22, 0.85)";
+      ctx.lineWidth = 2;
+      roundRect(ctx, x + 1, y + 1, w - 2, h - 2, 9, false, true);
+    }
+
+    function drawPlayer(cam) {
+      const x = player.x - cam.x;
+      const y = player.y - cam.y;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(player.ang);
+
+      const body = ctx.createRadialGradient(-5, -6, 4, 0, 0, 22);
+      body.addColorStop(0, player.hitFlash > 0 ? "#ffd4ce" : "#8dd1ff");
+      body.addColorStop(1, player.hitFlash > 0 ? "#e3695d" : "#356c9c");
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(0, 0, player.r, 0, TAU);
+      ctx.fill();
+
+      ctx.fillStyle = "#243d5a";
+      ctx.beginPath();
+      ctx.roundRect(-4, -5, 28, 10, 4);
+      ctx.fill();
+
+      ctx.fillStyle = "#f7f2e7";
+      ctx.beginPath();
+      ctx.arc(7, -4, 3, 0, TAU);
+      ctx.arc(7, 4, 3, 0, TAU);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawBot(bot, cam) {
+      const x = bot.x - cam.x;
+      const y = bot.y - cam.y;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(bot.ang);
+
+      const body = ctx.createRadialGradient(-4, -5, 3, 0, 0, 20);
+      body.addColorStop(0, bot.hitFlash > 0 ? "#ffe9b5" : "#ffb875");
+      body.addColorStop(1, bot.hitFlash > 0 ? "#f07f5e" : "#ad4f37");
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(0, 0, bot.r, 0, TAU);
+      ctx.fill();
+
+      ctx.fillStyle = "#5a2a22";
+      ctx.beginPath();
+      ctx.roundRect(-4, -4, 24, 8, 4);
+      ctx.fill();
+
+      ctx.fillStyle = "#33231a";
+      ctx.beginPath();
+      ctx.arc(5, -4, 2.8, 0, TAU);
+      ctx.arc(5, 4, 2.8, 0, TAU);
+      ctx.fill();
+
+      ctx.restore();
+
+      const hpW = 34;
+      const ratio = Math.max(0, bot.hp) / (55 + state.wave * 7);
+      ctx.fillStyle = "rgba(20, 22, 27, 0.75)";
+      roundRect(ctx, x - hpW / 2, y - bot.r - 13, hpW, 5, 2.5, true, false);
+      ctx.fillStyle = "#ff7f66";
+      roundRect(ctx, x - hpW / 2, y - bot.r - 13, hpW * ratio, 5, 2.5, true, false);
+    }
+
+    function drawBullets(cam) {
+      for (const b of world.bullets.concat(world.enemyBullets)) {
+        const x = b.x - cam.x;
+        const y = b.y - cam.y;
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        ctx.arc(x, y, b.r, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    function drawParticles(cam) {
+      for (const p of world.particles) {
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.ttl * 1.8));
+        ctx.fillStyle = p.c;
+        ctx.fillRect(p.x - cam.x, p.y - cam.y, p.size, p.size);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawCrosshair() {
+      const x = state.mouse.x;
+      const y = state.mouse.y;
+      ctx.strokeStyle = "rgba(255, 245, 220, 0.9)";
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      ctx.arc(x, y, 11, 0, TAU);
+      ctx.moveTo(x - 16, y);
+      ctx.lineTo(x - 6, y);
+      ctx.moveTo(x + 6, y);
+      ctx.lineTo(x + 16, y);
+      ctx.moveTo(x, y - 16);
+      ctx.lineTo(x, y - 6);
+      ctx.moveTo(x, y + 6);
+      ctx.lineTo(x, y + 16);
+      ctx.stroke();
+    }
+
+    function drawHud() {
+      const hpPct = (player.hp / player.maxHp) * 100;
+      hud.innerHTML = `
+        <div><strong>2D Shooter Arena</strong></div>
+        <div>Move: <strong>WASD / Buttons</strong> | Aim: <strong>Touch</strong> | Shoot: <strong>Button</strong></div>
+        <div>Wave: <strong>${state.wave}</strong> | Bots: <strong>${world.bots.length}</strong> | Score: <strong>${state.score}</strong></div>
+        <div>Health: <strong>${Math.ceil(player.hp)}</strong></div>
+        <div style="margin-top:6px; width:260px; max-width:70vw; height:10px; background:rgba(20,20,24,0.7); border-radius:999px; overflow:hidden; border:1px solid rgba(240,245,255,0.25)">
+          <div style="height:100%; width:${hpPct}%; background:linear-gradient(90deg,#42d79d,#2fb67f)"></div>
+        </div>
+        ${state.gameOver ? `<div class="dead">You were eliminated. Press <strong>R</strong> or tap Restart to play again.</div>` : ""}
+      `;
+    }
+
+    function render() {
+      const cam = camera();
+      drawFloor(cam);
+      drawWalls(cam);
+      if (typeof drawPerks === "function") drawPerks(cam);
+      drawParticles(cam);
+      for (const bot of world.bots) drawBot(bot, cam);
+      drawPlayer(cam);
+      drawBullets(cam);
+      drawCrosshair();
+      drawHud();
+    }
+
+    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+      if (w < 0) w = 0;
+      if (h < 0) h = 0;
+      r = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    let last = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+      update(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
+
+  <!-- Load perk sprites -->
+  <div class="perk-sprites">
+    <img id="slow-time" src="Images/clock.png" alt="Slow Time Perk" />
+    <img id="speed-boost" src="Images/blue-boot.png" alt="Speed Boost Perk" />
+    <img id="regenerate-hp" src="Images/green-cross.png" alt="Regenerate HP Perk" />
+    <img id="shield" src="Images/shield.png" alt="Shield Perk" />
+  </div>
+
+  <script>
+    const perkSprites = {
+      "slow-time": new Image(),
+      "speed-boost": new Image(),
+      "regenerate-hp": new Image(),
+      "shield": new Image(),
+    };
+    perkSprites["slow-time"].src = "clock.png"; // Path to clock sprite
+    perkSprites["speed-boost"].src = "speed.png"; // Path to blue boot sprite
+    perkSprites["regenerate-hp"].src = "health.png"; // Path to green cross sprite
+    perkSprites["shield"].src = "shield.png"; // Path to shield sprite
+
+    // Increase perk spawn frequency
+    setInterval(() => {
+      const types = ["slow-time", "speed-boost", "regenerate-hp", "shield"];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const x = Math.random() * (world.w - 40) + 20; // Ensure perks spawn within bounds
+      const y = Math.random() * (world.h - 40) + 20;
+      spawnPerk(type, x, y);
+    }, 5000); // Spawn a perk every 5 seconds
+
+    function drawPerks(cam) {
+      for (let i = world.perks.length - 1; i >= 0; i--) {
+        const perk = world.perks[i];
+        const x = perk.x - cam.x;
+        const y = perk.y - cam.y;
+        const sprite = perkSprites[perk.type];
+        const spriteReady = sprite && sprite.complete && sprite.naturalWidth > 0 && sprite.naturalHeight > 0;
+        if (spriteReady) {
+          ctx.drawImage(sprite, x - perk.r, y - perk.r, perk.r * 2, perk.r * 2);
+        } else {
+          // Fallback to a simple circle if sprite is not loaded
+          ctx.fillStyle = "white";
+          ctx.beginPath();
+          ctx.arc(x, y, perk.r, 0, TAU);
+          ctx.fill();
+        }
+      }
+    }
+  </script>
+</body>
+</html>
